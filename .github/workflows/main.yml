@@ -17,9 +17,6 @@ jobs:
 
       - name: Setup CUDA
         uses: Jimver/cuda-toolkit@v0.2.15
-        with:
-          cuda: '13.0.1'
-
 
       - name: Install dependencies
         run: |
