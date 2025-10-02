@@ -1,0 +1,30 @@
+name: CI Build & Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup CUDA
+        uses: nvidia/setup-cuda@v1
+        with:
+          cuda-version: '12.8'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-dev libgtest-dev libbenchmark-dev cmake build-essential
+
+      - name: Build & Run tests (CUDA / C++)
+        run: |
+          make all
