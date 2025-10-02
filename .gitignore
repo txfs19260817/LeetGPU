@@ -1,0 +1,11 @@
+.venv/
+
+build/
+Testing/
+
+.vscode/
+.idea/
+.DS_Store
+
+__pycache__/
+.pytest_cache/
