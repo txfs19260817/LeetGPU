@@ -6,6 +6,8 @@ constexpr int N = 1 << 20;
 
 extern "C" void solve(const float *A, const float *B, float *C, int N);
 extern "C" void solve_stride(const float *A, const float *B, float *C, int N);
+extern "C" void solve_vec(const float *A, const float *B, float *C, int N);
+extern "C" void solve_vec2(const float *A, const float *B, float *C, int N);
 
 static void run_and_check(void (*solve_fn)(const float *, const float *, float *, int), int N)
 {
@@ -64,4 +66,14 @@ TEST(VectorAddTest, BasicKernel)
 TEST(VectorAddTest, StrideKernel)
 {
     run_and_check(solve_stride, N);
+}
+
+TEST(VectorAddTest, VectorizedKernel)
+{
+    run_and_check(solve_vec, N);
+}
+
+TEST(VectorAddTest, VectorizedKernel2)
+{
+    run_and_check(solve_vec2, N);
 }

@@ -27,7 +27,8 @@ uv sync
 
 #### System Dependencies (Ubuntu/Debian)
 ```bash
-sudo apt-get install -y python3.12-dev libgtest-dev libbenchmark-dev
+sudo apt-get install -y python3.12-dev libgtest-dev
+export CPM_SOURCE_CACHE=$HOME/.cache/CPM  # Use CPM to manage nvbench dependency
 ```
 
 ## Usage Examples

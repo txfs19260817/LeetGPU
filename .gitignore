@@ -1,11 +1,15 @@
 .venv/
+compile_commands.json
 
 build/
 Testing/
+out/
 
+.vs/
 .vscode/
 .idea/
 .DS_Store
 
+.cache
 __pycache__/
 .pytest_cache/

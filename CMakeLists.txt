@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.30.4 FATAL_ERROR)
 project(LeetGPU LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -6,14 +6,20 @@ enable_testing()
 
 find_package(CUDAToolkit REQUIRED)
 find_package(GTest REQUIRED)
-find_package(benchmark REQUIRED)
+# Use CPM to fetch NVBench's main branch.
+# CPM: https://github.com/cpm-cmake/CPM.cmake NVBench: https://github.com/NVIDIA/nvbench
+include(cmake/CPM.cmake)
+CPMAddPackage(
+    "gh:NVIDIA/nvbench#b88a45f4170af4e907e69af22a55af67859d3b49"
+)
 
-# Locate all src_cuda.cu and test_cuda.cu files in a subdirectory
+# Locate all src_cuda.cu, test_cuda.cu and benchmark_cuda.cu files in a subdirectory
 function(add_cuda_test TEST_NAME DIR)
     # Set source files
     set(SRC_CUDA   ${DIR}/src_cuda.cu)
     set(SRC_TEST   ${DIR}/test_cuda.cu)
     set(SRC_BENCH  ${DIR}/benchmark_cuda.cu)
+
     # Library (operator implementation) - create a library for the operator implementation
     add_library(${TEST_NAME}_lib ${SRC_CUDA})
 
@@ -24,7 +30,7 @@ function(add_cuda_test TEST_NAME DIR)
         PRIVATE GTest::GTest GTest::Main
     )
 
-    # Add test target
+    # Add test target by test granularity
     include(GoogleTest)
     gtest_discover_tests(${TEST_NAME}
         WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
@@ -37,7 +43,7 @@ function(add_cuda_test TEST_NAME DIR)
         add_executable(${TEST_NAME}_benchmark ${SRC_BENCH})
         target_link_libraries(${TEST_NAME}_benchmark
             PRIVATE ${TEST_NAME}_lib
-            PRIVATE benchmark::benchmark benchmark::benchmark_main
+            PRIVATE nvbench::main
         )
     endif()
 endfunction()
