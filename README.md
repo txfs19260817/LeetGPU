@@ -1,6 +1,6 @@
 # LeetGPU
 
-A collection of exercises from [LeetGPU](https://leetgpu.com/), featuring implementations in CUDA, PyTorch, and Triton.
+A collection of exercises from [LeetGPU](https://leetgpu.com/) ([GitHub](https://github.com/AlphaGPU/leetgpu-challenges)), featuring implementations in CUDA, PyTorch, and Triton.
 
 ## Prerequisites
 
@@ -14,8 +14,6 @@ Tested on WSL2 Ubuntu 24.04.
 
 ```bash
 sudo apt-get install -y python3.12-dev libgtest-dev
-# Use CPM to manage nvbench dependency
-export CPM_SOURCE_CACHE=$HOME/.cache/CPM
 uv sync
 ```
 

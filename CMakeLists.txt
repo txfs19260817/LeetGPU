@@ -4,17 +4,25 @@ project(LeetGPU LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 17)
 enable_testing()
 
+# ===== Dependencies =====
+include(FetchContent)
+
 find_package(CUDAToolkit REQUIRED)
 find_package(GTest REQUIRED)
 # Add libtorch
 list(APPEND CMAKE_PREFIX_PATH ".venv/lib/python3.12/site-packages/torch")
 find_package(Torch REQUIRED)
-# Use CPM to fetch NVBench's main branch.
-# CPM: https://github.com/cpm-cmake/CPM.cmake NVBench: https://github.com/NVIDIA/nvbench
-include(cmake/CPM.cmake)
-CPMAddPackage(
-    "gh:NVIDIA/nvbench#b88a45f4170af4e907e69af22a55af67859d3b49"
+# Fetch NVBench
+set(NVBench_ENABLE_TESTING OFF)
+set(NVBench_ENABLE_HEADER_TESTING OFF)
+set(NVBench_ENABLE_DEVICE_TESTING OFF)
+set(NVBench_ENABLE_EXAMPLES OFF)
+FetchContent_Declare(
+    NVBench
+    GIT_REPOSITORY https://github.com/NVIDIA/nvbench.git
+    GIT_TAG b88a45f4170af4e907e69af22a55af67859d3b49
 )
+FetchContent_MakeAvailable(NVBench)
 
 # Locate all src_cuda.cu, test_cuda.cu and benchmark_cuda.cu files in a subdirectory
 function(add_cuda_test TEST_NAME DIR)
