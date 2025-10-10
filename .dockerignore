@@ -1,0 +1,40 @@
+# Build directories
+build/
+out/
+*.o
+*.so
+*.a
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation and notes
+*.md
+!README.md
+
+# Misc
+.DS_Store
+*.log

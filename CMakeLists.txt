@@ -6,6 +6,9 @@ enable_testing()
 
 find_package(CUDAToolkit REQUIRED)
 find_package(GTest REQUIRED)
+# Add libtorch
+list(APPEND CMAKE_PREFIX_PATH ".venv/lib/python3.12/site-packages/torch")
+find_package(Torch REQUIRED)
 # Use CPM to fetch NVBench's main branch.
 # CPM: https://github.com/cpm-cmake/CPM.cmake NVBench: https://github.com/NVIDIA/nvbench
 include(cmake/CPM.cmake)
