@@ -148,13 +148,10 @@ __global__ void reduce3(const float *__restrict__ d_in,
 __global__ void reduce3_final_stage(const float *d_in, float *d_out, int N) {
   extern __shared__ float sdata[];
   unsigned int tid = threadIdx.x;
-  unsigned int i = (2 * blockDim.x) * blockIdx.x + threadIdx.x;
+  unsigned int i = (blockDim.x) * blockIdx.x + threadIdx.x;
 
   float val = 0.0f;
-  if (i < N)
-    val += d_in[i];
-  if (i + blockDim.x < N)
-    val += d_in[i + blockDim.x];
+  for (; i < N; i += blockDim.x * gridDim.x) val += d_in[i];
   sdata[tid] = val;
   __syncthreads();
 
@@ -204,13 +201,10 @@ __global__ void reduce4_final_stage(const float *d_in, float *d_out, int N) {
   extern __shared__ float sdata[];
 
   unsigned int tid = threadIdx.x;
-  unsigned int i = (2 * blockDim.x) * blockIdx.x + threadIdx.x;
+  unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
 
   float val = 0.0f;
-  if (i < N)
-    val += d_in[i];
-  if (i + blockDim.x < N)
-    val += d_in[i + blockDim.x];
+  for (; i < N; i += blockDim.x * gridDim.x) val += d_in[i];
   sdata[tid] = val;
   __syncthreads();
 
@@ -267,13 +261,10 @@ __global__ void reduce5_final_stage(const float *d_in, float *d_out, int N) {
 
   // Each thread loads 2 elements from GMEM to SMEM
   unsigned int tid = threadIdx.x;
-  unsigned int i = (2 * blockDim.x) * blockIdx.x + threadIdx.x;
+  unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
 
   float val = 0.0f;
-  if (i < N)
-    val += d_in[i];
-  if (i + blockDim.x < N)
-    val += d_in[i + blockDim.x];
+  for (; i < N; i += blockDim.x * gridDim.x) val += d_in[i];
   sdata[tid] = val;
   __syncthreads();
 
@@ -330,13 +321,10 @@ __global__ void reduce6_final_stage(const float *d_in, float *d_out, int N) {
   extern __shared__ float sdata[];
 
   unsigned int tid = threadIdx.x;
-  unsigned int i = (2 * blockDim.x) * blockIdx.x + threadIdx.x;
+  unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
 
-  float val = .0f;
-  if (i < N)
-    val += d_in[i];
-  if (i + blockDim.x < N)
-    val += d_in[i + blockDim.x];
+  float val = 0.0f;
+  for (; i < N; i += blockDim.x * gridDim.x) val += d_in[i];
   sdata[tid] = val;
   __syncthreads();
 
