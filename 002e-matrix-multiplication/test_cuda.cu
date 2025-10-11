@@ -40,8 +40,6 @@ static const MatrixTestCase TEST_CASES[] = {
     {4096, 8192, 4096, "4096*8192 X 8192*4096 case"},
 };
 
-static const int NUM_TEST_CASES = sizeof(TEST_CASES) / sizeof(TEST_CASES[0]);
-
 // RAII deleter for device pointers
 struct CudaDeleter {
   void operator()(float *p) const noexcept { if (p) cudaFree(p); }

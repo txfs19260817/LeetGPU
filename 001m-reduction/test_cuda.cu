@@ -9,8 +9,9 @@
 
 // DUT symbols
 extern "C" void solve(const float *input, float *output, int N);
-// extern "C" void solve_2(const float* input, float* output, int N);
-// extern "C" void solve_atomic(const float* input, float* output, int N);
+extern "C" void solve1(const float* input, float* output, int N);
+extern "C" void solve2(const float* input, float* output, int N);
+extern "C" void solve3(const float* input, float* output, int N);
 
 // Utilities
 #define CUDA_CHECK(call)                                                       \
@@ -112,16 +113,17 @@ protected:
 
 // Register the kernels you want to test here:
 static const KernelSpec kKernels[] = {
-    {"solve", &solve, 100.0f},  // `solve` is error prone due to “floating-point atomics are non-deterministic”
-    // {"solve_2", &solve_2},
-    // {"solve_atomic", &solve_atomic}, // include if you have it
+    {"solve", &solve, 50.0f},
+    {"solve1", &solve1, 50.0f},
+    {"solve2", &solve2, 50.0f},
+    {"solve3", &solve3, 50.0f},
 };
 
 INSTANTIATE_TEST_SUITE_P(
-    Kernels, ReduceKernelTest, ::testing::ValuesIn(kKernels),
-    [](const testing::TestParamInfo<ReduceKernelTest::ParamType> &info) {
-      return std::string(info.param.name); // test name suffix = kernel name
-    });
+  Kernels, ReduceKernelTest, ::testing::ValuesIn(kKernels),
+  [](const testing::TestParamInfo<ReduceKernelTest::ParamType> &info) {
+    return std::string(info.param.name); // test name suffix = kernel name
+  });
 
 // -----------------------------------------------------------------------------
 // Write each test ONCE — it runs for every kernel above

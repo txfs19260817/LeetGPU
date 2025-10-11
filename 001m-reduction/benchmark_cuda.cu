@@ -4,8 +4,9 @@
 #include <vector>
 
 extern "C" void solve(const float *input, float *output, int N);
-// extern "C" void solve_2(const float* input, float* output, int N);
-// extern "C" void solve_atomic(const float* input, float* output, int N);
+extern "C" void solve1(const float* input, float* output, int N);
+extern "C" void solve2(const float* input, float* output, int N);
+extern "C" void solve3(const float* input, float* output, int N);
 
 template <auto KernelFunc>
 static void bench_reduction_impl(nvbench::state &state) {
@@ -43,12 +44,15 @@ static void bench_reduction_impl(nvbench::state &state) {
 static void bench_solve(nvbench::state &state) {
   bench_reduction_impl<solve>(state);
 }
-// static void bench_solve_2(nvbench::state &state) {
-//     bench_reduction_impl<solve_2>(state);
-// }
-// static void bench_solve_atomic(nvbench::state &state) {
-//     bench_reduction_impl<solve_atomic>(state);
-// }
+static void bench_solve_1(nvbench::state &state) {
+    bench_reduction_impl<solve1>(state);
+}
+static void bench_solve_2(nvbench::state &state) {
+    bench_reduction_impl<solve2>(state);
+}
+static void bench_solve_3(nvbench::state &state) {
+    bench_reduction_impl<solve3>(state);
+}
 
 // --- nvbench Benchmark Registration ---
 
@@ -63,12 +67,7 @@ const std::vector<nvbench::int64_t> ns = {
   1 << 30  // 1,073,741,824 (1G)
 };
 
-NVBENCH_BENCH(bench_solve).set_name("reduction").add_int64_axis("N", ns);
-
-// NVBENCH_BENCH(bench_solve_2)
-//     .set_name("reduction_v2")
-//     .add_int64_axis("N", ns);
-
-// NVBENCH_BENCH(bench_solve_atomic)
-//     .set_name("reduction_atomic")
-//     .add_int64_axis("N", ns);
+NVBENCH_BENCH(bench_solve).set_name("reduction_baseline").add_int64_axis("N", ns);
+NVBENCH_BENCH(bench_solve_1).set_name("reduction_v1").add_int64_axis("N", ns);
+NVBENCH_BENCH(bench_solve_2).set_name("reduction_v2").add_int64_axis("N", ns);
+NVBENCH_BENCH(bench_solve_3).set_name("reduction_v3").add_int64_axis("N", ns);
