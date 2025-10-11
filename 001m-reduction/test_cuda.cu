@@ -12,6 +12,9 @@ extern "C" void solve(const float *input, float *output, int N);
 extern "C" void solve1(const float* input, float* output, int N);
 extern "C" void solve2(const float* input, float* output, int N);
 extern "C" void solve3(const float* input, float* output, int N);
+extern "C" void solve4(const float* input, float* output, int N);
+extern "C" void solve5(const float* input, float* output, int N);
+extern "C" void solve6(const float* input, float* output, int N);
 
 // Utilities
 #define CUDA_CHECK(call)                                                       \
@@ -113,10 +116,13 @@ protected:
 
 // Register the kernels you want to test here:
 static const KernelSpec kKernels[] = {
-    {"solve", &solve, 50.0f},
-    {"solve1", &solve1, 50.0f},
-    {"solve2", &solve2, 50.0f},
-    {"solve3", &solve3, 50.0f},
+    {"solve", &solve, .5f},
+    {"solve1", &solve1, .5f},
+    {"solve2", &solve2, .5f},
+    {"solve3", &solve3, .5f},
+    {"solve4", &solve4, .5f},
+    {"solve5", &solve5, .5f},
+    {"solve6", &solve6, .5f},
 };
 
 INSTANTIATE_TEST_SUITE_P(
@@ -157,5 +163,5 @@ TEST_P(ReduceKernelTest, LargeRandom_10k) {
 }
 
 TEST_P(ReduceKernelTest, LargeRandom_15M) {
-  run_reduce_and_check(uniform(15'000'000, -1000.f, 1000.f, 321), kernel(), (std::isnan(atol())) ? 1e-2f : atol());
+  run_reduce_and_check(uniform(15'000'000, -100.f, 100.f, 321), kernel(), (std::isnan(atol())) ? 1e-2f : atol());
 }

@@ -8,7 +8,17 @@ enable_testing()
 include(FetchContent)
 
 find_package(CUDAToolkit REQUIRED)
-find_package(GTest REQUIRED)
+# GTest
+find_package(GTest)
+if(NOT GTest_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG        main  # 或指定版本如 release-1.12.1
+    )
+    FetchContent_MakeAvailable(googletest)
+endif()
 # Add libtorch
 list(APPEND CMAKE_PREFIX_PATH ".venv/lib/python3.12/site-packages/torch")
 find_package(Torch REQUIRED)
