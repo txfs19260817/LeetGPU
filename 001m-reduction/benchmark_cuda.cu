@@ -10,6 +10,7 @@ extern "C" void solve3(const float* input, float* output, int N);
 extern "C" void solve4(const float* input, float* output, int N);
 extern "C" void solve5(const float* input, float* output, int N);
 extern "C" void solve6(const float* input, float* output, int N);
+extern "C" void solve_cub(const float* input, float* output, int N);
 
 template <auto KernelFunc>
 static void bench_reduction_impl(nvbench::state &state) {
@@ -65,6 +66,9 @@ static void bench_solve_5(nvbench::state &state) {
 static void bench_solve_6(nvbench::state &state) {
     bench_reduction_impl<solve6>(state);
 }
+static void bench_solve_cub(nvbench::state &state) {
+    bench_reduction_impl<solve_cub>(state);
+}
 
 // --- nvbench Benchmark Registration ---
 
@@ -86,3 +90,4 @@ NVBENCH_BENCH(bench_solve_3).set_name("reduction_v3").add_int64_axis("N", ns);
 NVBENCH_BENCH(bench_solve_4).set_name("reduction_v4").add_int64_axis("N", ns);
 NVBENCH_BENCH(bench_solve_5).set_name("reduction_v5").add_int64_axis("N", ns);
 NVBENCH_BENCH(bench_solve_6).set_name("reduction_v6").add_int64_axis("N", ns);
+NVBENCH_BENCH(bench_solve_cub).set_name("reduction_cub").add_int64_axis("N", ns);

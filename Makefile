@@ -23,6 +23,7 @@ clean:
 	$(shell command -v python 2>/dev/null || command -v python3) -Bc "import pathlib, shutil; \
 		shutil.rmtree('$(BUILD_DIR)', ignore_errors=True); \
 		shutil.rmtree('out', ignore_errors=True); \
+		shutil.rmtree('.pytest_cache', ignore_errors=True); \
 		[shutil.rmtree(p, ignore_errors=True) for p in pathlib.Path('.').glob('0*/**/__pycache__')]"
 
 py-sync:

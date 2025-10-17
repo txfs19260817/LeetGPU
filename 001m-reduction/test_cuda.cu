@@ -15,6 +15,7 @@ extern "C" void solve3(const float* input, float* output, int N);
 extern "C" void solve4(const float* input, float* output, int N);
 extern "C" void solve5(const float* input, float* output, int N);
 extern "C" void solve6(const float* input, float* output, int N);
+extern "C" void solve_cub(const float* input, float* output, int N);
 
 // Utilities
 #define CUDA_CHECK(call)                                                       \
@@ -123,6 +124,7 @@ static const KernelSpec kKernels[] = {
     {"solve4", &solve4, .5f},
     {"solve5", &solve5, .5f},
     {"solve6", &solve6, .5f},
+    {"solve_cub", &solve_cub, .5f},
 };
 
 INSTANTIATE_TEST_SUITE_P(

@@ -15,13 +15,13 @@ if(NOT GTest_FOUND)
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG        main  # 或指定版本如 release-1.12.1
+        GIT_TAG        v1.17.x
     )
     FetchContent_MakeAvailable(googletest)
 endif()
 # Add libtorch
-list(APPEND CMAKE_PREFIX_PATH ".venv/lib/python3.12/site-packages/torch")
-find_package(Torch REQUIRED)
+# list(APPEND CMAKE_PREFIX_PATH ".venv/lib/python3.12/site-packages/torch")
+# find_package(Torch REQUIRED)
 # Fetch NVBench
 set(NVBench_ENABLE_TESTING OFF)
 set(NVBench_ENABLE_HEADER_TESTING OFF)

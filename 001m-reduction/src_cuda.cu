@@ -1,4 +1,5 @@
 #include <cooperative_groups.h>
+#include <cub/cub.cuh>
 #include <cuda_runtime.h>
 
 #define THREAD_PER_BLOCK 1024
@@ -151,7 +152,8 @@ __global__ void reduce3_final_stage(const float *d_in, float *d_out, int N) {
   unsigned int i = (blockDim.x) * blockIdx.x + threadIdx.x;
 
   float val = 0.0f;
-  for (; i < N; i += blockDim.x * gridDim.x) val += d_in[i];
+  for (; i < N; i += blockDim.x * gridDim.x)
+    val += d_in[i];
   sdata[tid] = val;
   __syncthreads();
 
@@ -166,6 +168,7 @@ __global__ void reduce3_final_stage(const float *d_in, float *d_out, int N) {
 
 // V4: warp-reduce saving __syncthreads() on the last round
 __device__ void warp_reduce(volatile float *cache, int tid) {
+  cache[tid] += cache[tid + 32];
   cache[tid] += cache[tid + 16];
   cache[tid] += cache[tid + 8];
   cache[tid] += cache[tid + 4];
@@ -183,14 +186,17 @@ __global__ void reduce4(const float *__restrict__ d_in,
   sdata[tid] = d_in[i] + d_in[i + blockDim.x];
   __syncthreads();
 
-  // Do reduction in SMEM
-  for (unsigned int s = blockDim.x / 2; s >= 32; s >>= 1) {
+  // Do reduction in SMEM: loop ends when s == 32
+  for (unsigned int s = blockDim.x / 2; s > 32; s >>= 1) {
     if (tid < s)
       sdata[tid] += sdata[tid + s];
     __syncthreads();
   }
-  warp_reduce(sdata, tid); // 32 threads within a warp are synchronized so
-                           // __syncthreads(); is unnecessary
+
+  // 32 threads within a warp are synchronized so
+  // __syncthreads(); is unnecessary
+  if (tid < 32)
+    warp_reduce(sdata, tid);
 
   // Write result for this block back to GMEM
   if (tid == 0)
@@ -204,29 +210,33 @@ __global__ void reduce4_final_stage(const float *d_in, float *d_out, int N) {
   unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
 
   float val = 0.0f;
-  for (; i < N; i += blockDim.x * gridDim.x) val += d_in[i];
+  for (; i < N; i += blockDim.x * gridDim.x)
+    val += d_in[i];
   sdata[tid] = val;
   __syncthreads();
 
-  for (unsigned int s = blockDim.x / 2; s >= 32; s >>= 1) {
+  for (unsigned int s = blockDim.x / 2; s > 32; s >>= 1) {
     if (tid < s)
       sdata[tid] += sdata[tid + s];
     __syncthreads();
   }
 
-  warp_reduce(sdata, tid); // 32 threads within a warp are synchronized so
-                           // __syncthreads(); is unnecessary
+  // 32 threads within a warp are synchronized so
+  // __syncthreads(); is unnecessary
+  if (tid < 32)
+    warp_reduce(sdata, tid);
+
   if (tid == 0)
     atomicAdd(d_out, sdata[0]);
 }
 
 // V5: warp-reduce with __shfl_down_sync
 __device__ __forceinline__ float warp_reduce_sum(float v, unsigned mask) {
-  v += __shfl_down_sync(mask, v, 16);
-  v += __shfl_down_sync(mask, v, 8);
-  v += __shfl_down_sync(mask, v, 4);
-  v += __shfl_down_sync(mask, v, 2);
-  v += __shfl_down_sync(mask, v, 1);
+  v += __shfl_down_sync(mask, v, 16);  // add the value from thread with ID 16
+  v += __shfl_down_sync(mask, v, 8);  // add the value from thread with ID 8
+  v += __shfl_down_sync(mask, v, 4);  // add the value from thread with ID 4
+  v += __shfl_down_sync(mask, v, 2);  // add the value from thread with ID 2
+  v += __shfl_down_sync(mask, v, 1);  // add the value from thread with ID 1
   return v;
 }
 
@@ -264,7 +274,8 @@ __global__ void reduce5_final_stage(const float *d_in, float *d_out, int N) {
   unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
 
   float val = 0.0f;
-  for (; i < N; i += blockDim.x * gridDim.x) val += d_in[i];
+  for (; i < N; i += blockDim.x * gridDim.x)
+    val += d_in[i];
   sdata[tid] = val;
   __syncthreads();
 
@@ -324,7 +335,8 @@ __global__ void reduce6_final_stage(const float *d_in, float *d_out, int N) {
   unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
 
   float val = 0.0f;
-  for (; i < N; i += blockDim.x * gridDim.x) val += d_in[i];
+  for (; i < N; i += blockDim.x * gridDim.x)
+    val += d_in[i];
   sdata[tid] = val;
   __syncthreads();
 
@@ -430,4 +442,21 @@ extern "C" void solve5(const float *input, float *output, int N) {
 extern "C" void solve6(const float *input, float *output, int N) {
   solve_impl<THREAD_PER_BLOCK, 2>(input, output, N, reduce6,
                                   reduce6_final_stage);
+}
+
+extern "C" void solve_cub(const float *input, float *output, int N) {
+  void *d_temp_storage = nullptr;
+  size_t temp_storage_bytes = 0;
+
+  // 1. First call, get the required temporary storage size
+  cub::DeviceReduce::Sum(d_temp_storage, temp_storage_bytes, input, output, N);
+
+  // 2. Allocate temporary storage
+  cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+  // 3. Second call, execute the actual reduction calculation
+  cub::DeviceReduce::Sum(d_temp_storage, temp_storage_bytes, input, output, N);
+
+  // Release temporary storage
+  cudaFree(d_temp_storage);
 }
