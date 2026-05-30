@@ -47,7 +47,6 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen
 
 # Copy project files
-COPY cmake/ ./cmake/
 COPY CMakeLists.txt Makefile ./
 COPY . .
 
@@ -56,4 +55,3 @@ RUN make build-release
 
 # Set default command to run tests
 CMD ["make", "test"]
-

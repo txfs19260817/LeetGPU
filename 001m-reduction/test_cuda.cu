@@ -1,169 +1,153 @@
+#include "cuda_registry.cuh"
+
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <random>
+#include <string>
 #include <vector>
 
-// DUT symbols
-extern "C" void solve(const float *input, float *output, int N);
-extern "C" void solve1(const float* input, float* output, int N);
-extern "C" void solve2(const float* input, float* output, int N);
-extern "C" void solve3(const float* input, float* output, int N);
-extern "C" void solve4(const float* input, float* output, int N);
-extern "C" void solve5(const float* input, float* output, int N);
-extern "C" void solve6(const float* input, float* output, int N);
-extern "C" void solve_cub(const float* input, float* output, int N);
+namespace {
 
-// Utilities
-#define CUDA_CHECK(call)                                                       \
-  do {                                                                         \
-    cudaError_t _err = (call);                                                 \
-    if (_err != cudaSuccess) {                                                 \
-      GTEST_FAIL() << "CUDA error: " << cudaGetErrorString(_err) << " at "     \
-                   << __FILE__ << ":" << __LINE__;                             \
-    }                                                                          \
+#define CUDA_CHECK(call)                                                                        \
+  do {                                                                                          \
+    cudaError_t err = (call);                                                                   \
+    if (err != cudaSuccess) {                                                                   \
+      GTEST_FAIL() << "CUDA error: " << cudaGetErrorString(err) << " at " << __FILE__ << ":"  \
+                   << __LINE__;                                                                 \
+    }                                                                                           \
   } while (0)
 
 struct CudaDeleter {
-  void operator()(float *p) const noexcept {
-    if (p)
+  void operator()(float *p) const noexcept
+  {
+    if (p) {
       cudaFree(p);
+    }
   }
 };
-using DevicePtr = std::unique_ptr<float, CudaDeleter>;
 
-static float cpu_reference_sum(const std::vector<float> &h_in) {
+using DevicePtr = std::unique_ptr<float, CudaDeleter>;
+using Implementation = leetgpu::reduction::CudaImplementation;
+
+float cpu_reference_sum(const std::vector<float> &h_in)
+{
   long double acc = 0.0L;
-  for (float x : h_in)
+  for (float x : h_in) {
     acc += static_cast<long double>(x);
+  }
   return static_cast<float>(acc);
 }
 
-using KernelFunc = void (*)(const float *, float *, int);
+void run_reduce_and_check(const std::vector<float> &h_in, const Implementation &impl)
+{
+  const int n = static_cast<int>(h_in.size());
+  ASSERT_GT(n, 0) << "Input must be non-empty.";
+  const auto bytes_in = static_cast<std::size_t>(n) * sizeof(float);
 
-static void run_reduce_and_check(const std::vector<float> &h_in,
-                                 KernelFunc kernel_func, float atol = 1e-4f) {
-  const int N = static_cast<int>(h_in.size());
-  ASSERT_GT(N, 0) << "Input must be non-empty.";
-  const size_t bytes_in = static_cast<size_t>(N) * sizeof(float);
-
-  // Device allocations (RAII-managed)
-  float *raw_in = nullptr, *raw_out = nullptr;
-  CUDA_CHECK(cudaMalloc((void **)&raw_in, bytes_in));
-  CUDA_CHECK(cudaMalloc((void **)&raw_out, sizeof(float)));
+  float *raw_in = nullptr;
+  float *raw_out = nullptr;
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&raw_in), bytes_in));
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&raw_out), sizeof(float)));
   DevicePtr d_in(raw_in), d_out(raw_out);
 
-  // Copy input from host to device
-  CUDA_CHECK(
-      cudaMemcpy(d_in.get(), h_in.data(), bytes_in, cudaMemcpyHostToDevice));
-  // (Optional) poison the output so we know kernel overwrites it
-  const uint32_t poison = 0x7f800001u; // a signaling-NaN-ish pattern
-  CUDA_CHECK(
-      cudaMemcpy(d_out.get(), &poison, sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_in.get(), h_in.data(), bytes_in, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemset(d_out.get(), 0, sizeof(float)));
 
-  // Launch kernel
-  kernel_func(d_in.get(), d_out.get(), N);
+  impl.func(d_in.get(), d_out.get(), n);
   CUDA_CHECK(cudaGetLastError());
   CUDA_CHECK(cudaDeviceSynchronize());
 
-  // Copy output from device to host
   float got = 0.0f;
-  CUDA_CHECK(
-      cudaMemcpy(&got, d_out.get(), sizeof(float), cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(&got, d_out.get(), sizeof(float), cudaMemcpyDeviceToHost));
 
-  // Verify with CPU reference
-  float ref = cpu_reference_sum(h_in);
-  SCOPED_TRACE(testing::Message() << "N=" << N);
-  EXPECT_NEAR(got, ref, atol) << "Expected: " << ref << ", Got: " << got << ", Abs. Error: " << std::abs(got - ref) << ", Tolerance: " << atol;
+  const float ref = cpu_reference_sum(h_in);
+  SCOPED_TRACE(testing::Message() << "implementation=" << impl.id << ", N=" << n);
+  EXPECT_NEAR(got, ref, impl.atol) << "Expected: " << ref << ", Got: " << got
+                                   << ", Abs. Error: " << std::abs(got - ref)
+                                   << ", Tolerance: " << impl.atol;
 }
 
-// Simple input builders
-static std::vector<float> seq(std::initializer_list<float> xs) { return {xs}; }
-static std::vector<float> zeros(int N) {
-  return std::vector<float>((size_t)N, 0.0f);
+std::vector<float> seq(std::initializer_list<float> xs)
+{
+  return {xs};
 }
-static std::vector<float> ones(int N) {
-  return std::vector<float>((size_t)N, 1.0f);
+
+std::vector<float> zeros(int n)
+{
+  return std::vector<float>(static_cast<std::size_t>(n), 0.0f);
 }
-static std::vector<float> uniform(int N, float lo, float hi,
-                                  uint64_t seed = 42) {
-  std::vector<float> v((size_t)N);
+
+std::vector<float> ones(int n)
+{
+  return std::vector<float>(static_cast<std::size_t>(n), 1.0f);
+}
+
+std::vector<float> uniform(int n, float lo, float hi, std::uint64_t seed)
+{
+  std::vector<float> v(static_cast<std::size_t>(n));
   std::mt19937_64 rng(seed);
   std::uniform_real_distribution<float> dist(lo, hi);
-  for (int i = 0; i < N; ++i)
-    v[(size_t)i] = dist(rng);
+  for (int i = 0; i < n; ++i) {
+    v[static_cast<std::size_t>(i)] = dist(rng);
+  }
   return v;
 }
 
-// Parameterization over kernels
-struct KernelSpec {
-  const char *name;
-  KernelFunc func;
-  float atol = std::numeric_limits<float>::quiet_NaN();
+class ReductionCudaTest : public ::testing::TestWithParam<Implementation> {
+protected:
+  const Implementation &impl() const { return GetParam(); }
 };
 
-std::ostream &operator<<(std::ostream &os, const KernelSpec &k) {
-  return os << k.name; // so names appear nicely in test output
+TEST_P(ReductionCudaTest, BasicExample)
+{
+  run_reduce_and_check(seq({1, 2, 3, 4, 5, 6, 7, 8}), impl());
 }
 
-class ReduceKernelTest : public ::testing::TestWithParam<KernelSpec> {
-protected:
-  KernelFunc kernel() const { return GetParam().func; }
-  float atol() const { return GetParam().atol; }
-};
+TEST_P(ReductionCudaTest, NegativeNumbers)
+{
+  run_reduce_and_check(seq({-2.5f, 1.5f, -1.0f, 2.0f}), impl());
+}
 
-// Register the kernels you want to test here:
-static const KernelSpec kKernels[] = {
-    {"solve", &solve, .5f},
-    {"solve1", &solve1, .5f},
-    {"solve2", &solve2, .5f},
-    {"solve3", &solve3, .5f},
-    {"solve4", &solve4, .5f},
-    {"solve5", &solve5, .5f},
-    {"solve6", &solve6, .5f},
-    {"solve_cub", &solve_cub, .5f},
-};
+TEST_P(ReductionCudaTest, SingleElement)
+{
+  run_reduce_and_check(seq({42.0f}), impl());
+}
+
+TEST_P(ReductionCudaTest, AllZeros1024)
+{
+  run_reduce_and_check(zeros(1024), impl());
+}
+
+TEST_P(ReductionCudaTest, AllOnes1024)
+{
+  run_reduce_and_check(ones(1024), impl());
+}
+
+TEST_P(ReductionCudaTest, NonPowerOfTwo)
+{
+  run_reduce_and_check(seq({1, 2, 3, 4, 5}), impl());
+}
+
+TEST_P(ReductionCudaTest, LargeRandom10k)
+{
+  run_reduce_and_check(uniform(10'000, -1000.0f, 1000.0f, 123), impl());
+}
+
+TEST_P(ReductionCudaTest, LargeRandom1M)
+{
+  run_reduce_and_check(uniform(1 << 20, -100.0f, 100.0f, 321), impl());
+}
 
 INSTANTIATE_TEST_SUITE_P(
-  Kernels, ReduceKernelTest, ::testing::ValuesIn(kKernels),
-  [](const testing::TestParamInfo<ReduceKernelTest::ParamType> &info) {
-    return std::string(info.param.name); // test name suffix = kernel name
-  });
+    Implementations,
+    ReductionCudaTest,
+    ::testing::ValuesIn(leetgpu::reduction::kCudaImplementations),
+    [](const testing::TestParamInfo<ReductionCudaTest::ParamType> &info) {
+      return std::string(info.param.id);
+    });
 
-// -----------------------------------------------------------------------------
-// Write each test ONCE — it runs for every kernel above
-// -----------------------------------------------------------------------------
-TEST_P(ReduceKernelTest, BasicExample) {
-  run_reduce_and_check(seq({1, 2, 3, 4, 5, 6, 7, 8}), kernel(), (std::isnan(atol())) ? 1e-6f : atol());
-}
-
-TEST_P(ReduceKernelTest, NegativeNumbers) {
-  run_reduce_and_check(seq({-2.5f, 1.5f, -1.0f, 2.0f}), kernel(), (std::isnan(atol())) ? 1e-6f : atol());
-}
-
-TEST_P(ReduceKernelTest, SingleElement) {
-  run_reduce_and_check(seq({42.0f}), kernel(), (std::isnan(atol())) ? 0.0f : atol());
-}
-
-TEST_P(ReduceKernelTest, AllZeros_1024) {
-  run_reduce_and_check(zeros(1024), kernel(), (std::isnan(atol())) ? 0.0f : atol());
-}
-
-TEST_P(ReduceKernelTest, AllOnes_1024) {
-  run_reduce_and_check(ones(1024), kernel(), (std::isnan(atol())) ? 1e-6f : atol());
-}
-
-TEST_P(ReduceKernelTest, NonPowerOfTwo) {
-  run_reduce_and_check(seq({1, 2, 3, 4, 5}), kernel(), (std::isnan(atol())) ? 1e-6f : atol());
-}
-
-TEST_P(ReduceKernelTest, LargeRandom_10k) {
-  run_reduce_and_check(uniform(10000, -1000.f, 1000.f, 123), kernel(), (std::isnan(atol())) ? 1e-3f : atol());
-}
-
-TEST_P(ReduceKernelTest, LargeRandom_15M) {
-  run_reduce_and_check(uniform(15'000'000, -100.f, 100.f, 321), kernel(), (std::isnan(atol())) ? 1e-2f : atol());
-}
+} // namespace

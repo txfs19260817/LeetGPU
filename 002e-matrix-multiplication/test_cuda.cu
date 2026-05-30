@@ -1,178 +1,119 @@
+#include "cuda_registry.cuh"
+
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstddef>
-#include <limits>
 #include <memory>
 #include <sstream>
-#include <string>
 #include <tuple>
 #include <vector>
 
-// -----------------------------------------------------------------------------
-// DUT symbols
-// -----------------------------------------------------------------------------
-extern "C" void solve(const float *A, const float *B, float *C, int M, int N,
-                      int K);
-extern "C" void solve2(const float *A, const float *B, float *C, int M, int N,
-                       int K);
-extern "C" void solve3(const float *A, const float *B, float *C, int M, int N,
-                       int K);
-extern "C" void solve4(const float *A, const float *B, float *C, int M, int N,
-                       int K);
+namespace {
 
-// -----------------------------------------------------------------------------
-// Utilities
-// -----------------------------------------------------------------------------
-#define CUDA_CHECK(call)                                                       \
-  do {                                                                         \
-    cudaError_t _err = (call);                                                 \
-    if (_err != cudaSuccess) {                                                 \
-      GTEST_FAIL() << "CUDA error: " << cudaGetErrorString(_err) << " at "     \
-                   << __FILE__ << ":" << __LINE__;                             \
-    }                                                                          \
+#define CUDA_CHECK(call)                                                                        \
+  do {                                                                                          \
+    cudaError_t err = (call);                                                                   \
+    if (err != cudaSuccess) {                                                                   \
+      GTEST_FAIL() << "CUDA error: " << cudaGetErrorString(err) << " at " << __FILE__ << ":"  \
+                   << __LINE__;                                                                 \
+    }                                                                                           \
   } while (0)
 
 struct CudaDeleter {
-  void operator()(float *p) const noexcept {
-    if (p)
+  void operator()(float *p) const noexcept
+  {
+    if (p) {
       cudaFree(p);
+    }
   }
 };
+
 using DevicePtr = std::unique_ptr<float, CudaDeleter>;
+using Implementation = leetgpu::matrix_multiplication::CudaImplementation;
+using MatrixCase = leetgpu::matrix_multiplication::MatrixCase;
+using Param = std::tuple<Implementation, MatrixCase>;
 
-// -----------------------------------------------------------------------------
-// Parameter specs
-// -----------------------------------------------------------------------------
-using KernelFunc = void (*)(const float *, const float *, float *, int, int,
-                            int);
+void run_matrix_mul_and_check(const Implementation &impl, const MatrixCase &matrix_case)
+{
+  const int m = matrix_case.m;
+  const int n = matrix_case.n;
+  const int k = matrix_case.k;
+  const auto size_a = static_cast<std::size_t>(m) * static_cast<std::size_t>(k);
+  const auto size_b = static_cast<std::size_t>(k) * static_cast<std::size_t>(n);
+  const auto size_c = static_cast<std::size_t>(m) * static_cast<std::size_t>(n);
 
-struct KernelSpec {
-  const char *name;
-  KernelFunc func;
-  float atol =
-      std::numeric_limits<float>::quiet_NaN(); // optional per-kernel tol
-};
+  std::vector<float> h_a(size_a);
+  std::vector<float> h_b(size_b);
+  std::vector<float> h_c(size_c);
 
-struct MatCase {
-  int M, N, K;
-  const char *desc; // human-friendly
-};
+  for (std::size_t i = 0; i < h_a.size(); ++i) {
+    h_a[i] = static_cast<float>(i % 5 + 1);
+  }
+  for (std::size_t i = 0; i < h_b.size(); ++i) {
+    h_b[i] = static_cast<float>(i % 7 + 1);
+  }
 
-inline std::ostream &operator<<(std::ostream &os, const KernelSpec &k) {
-  return os << k.name;
-}
-inline std::ostream &operator<<(std::ostream &os, const MatCase &c) {
-  return os << c.desc << " (M=" << c.M << ",N=" << c.N << ",K=" << c.K << ")";
-}
+  float *raw_a = nullptr;
+  float *raw_b = nullptr;
+  float *raw_c = nullptr;
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&raw_a), size_a * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&raw_b), size_b * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&raw_c), size_c * sizeof(float)));
+  DevicePtr d_a(raw_a), d_b(raw_b), d_c(raw_c);
 
-// -----------------------------------------------------------------------------
-// Core runner (shared by all parameter combinations)
-// -----------------------------------------------------------------------------
-static void run_matrix_mul_and_check(int M, int N, int K,
-                                     KernelFunc kernel_func, float atol) {
-  const size_t sizeA =
-      static_cast<size_t>(M) * static_cast<size_t>(N) * sizeof(float);
-  const size_t sizeB =
-      static_cast<size_t>(N) * static_cast<size_t>(K) * sizeof(float);
-  const size_t sizeC =
-      static_cast<size_t>(M) * static_cast<size_t>(K) * sizeof(float);
+  CUDA_CHECK(cudaMemcpy(d_a.get(), h_a.data(), size_a * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_b.get(), h_b.data(), size_b * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemset(d_c.get(), 0, size_c * sizeof(float)));
 
-  std::vector<float> h_A(static_cast<size_t>(M) * static_cast<size_t>(N));
-  std::vector<float> h_B(static_cast<size_t>(N) * static_cast<size_t>(K));
-  std::vector<float> h_C(static_cast<size_t>(M) * static_cast<size_t>(K));
-
-  // Deterministic small
-  for (size_t i = 0; i < h_A.size(); ++i)
-    h_A[i] = static_cast<float>(i % 5 + 1);
-  for (size_t i = 0; i < h_B.size(); ++i)
-    h_B[i] = static_cast<float>(i % 7 + 1);
-
-  float *rawA = nullptr, *rawB = nullptr, *rawC = nullptr;
-  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&rawA), sizeA));
-  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&rawB), sizeB));
-  CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&rawC), sizeC));
-  DevicePtr d_A(rawA), d_B(rawB), d_C(rawC);
-
-  CUDA_CHECK(cudaMemcpy(d_A.get(), h_A.data(), sizeA, cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(d_B.get(), h_B.data(), sizeB, cudaMemcpyHostToDevice));
-
-  // Launch and sync
-  kernel_func(d_A.get(), d_B.get(), d_C.get(), M, N, K);
+  impl.func(d_a.get(), d_b.get(), d_c.get(), m, n, k);
   CUDA_CHECK(cudaGetLastError());
   CUDA_CHECK(cudaDeviceSynchronize());
 
-  CUDA_CHECK(cudaMemcpy(h_C.data(), d_C.get(), sizeC, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemcpy(h_c.data(), d_c.get(), size_c * sizeof(float), cudaMemcpyDeviceToHost));
 
-  // CPU reference
-  std::vector<float> ref(static_cast<size_t>(M) * static_cast<size_t>(K), 0.0f);
-  for (int r = 0; r < M; ++r) {
-    for (int c = 0; c < K; ++c) {
+  std::vector<float> ref(size_c, 0.0f);
+  for (int row = 0; row < m; ++row) {
+    for (int col = 0; col < n; ++col) {
       float sum = 0.0f;
-      for (int i = 0; i < N; ++i) {
-        sum += h_A[static_cast<size_t>(r) * N + i] *
-               h_B[static_cast<size_t>(i) * K + c];
+      for (int inner = 0; inner < k; ++inner) {
+        sum += h_a[static_cast<std::size_t>(row) * k + inner] *
+               h_b[static_cast<std::size_t>(inner) * n + col];
       }
-      ref[static_cast<size_t>(r) * K + c] = sum;
+      ref[static_cast<std::size_t>(row) * n + col] = sum;
     }
   }
 
-  SCOPED_TRACE(testing::Message() << "M=" << M << ", N=" << N << ", K=" << K);
-  const float tol = std::isnan(atol) ? 1e-4f : atol;
-  for (size_t i = 0; i < h_C.size(); ++i) {
-    EXPECT_NEAR(h_C[i], ref[i], tol) << "Mismatch at linear index " << i;
+  SCOPED_TRACE(testing::Message() << "implementation=" << impl.id << ", case=" << matrix_case.id
+                                  << " (M=" << m << ", N=" << n << ", K=" << k << ")");
+  for (std::size_t i = 0; i < h_c.size(); ++i) {
+    EXPECT_NEAR(h_c[i], ref[i], impl.atol) << "Mismatch at linear index " << i;
   }
 }
 
-// -----------------------------------------------------------------------------
-// Parameter sets
-// -----------------------------------------------------------------------------
-static const KernelSpec kKernels[] = {
-    {"solve", &solve, 1e-4f},
-    {"solve2", &solve2, 1e-4f},
-    {"solve3", &solve3, 1e-4f},
-    {"solve4", &solve4, 1e-4f},
-};
+class MatmulCudaTest : public ::testing::TestWithParam<Param> {};
 
-static const MatCase kCases[] = {
-    {2, 3, 2, "2x3 * 3x2"},
-    {8, 8, 8, "8x8 * 8x8"},
-    {4, 6, 5, "4x6 * 6x5"},
-    {32, 64, 16, "32x64 * 64x16"},
-    {64, 64, 64, "64x64 * 64x64"},
-    {128, 128, 128, "128x128 * 128x128"},
-    {256, 256, 256, "256x256 * 256x256"},
-    {512, 512, 512, "512x512 * 512x512"},
-    // {1024, 1024, 1024, "1024x1024 * 1024x1024"},
-};
-
-// -----------------------------------------------------------------------------
-// TEST: one body, runs across (kernel, case) combinations
-// -----------------------------------------------------------------------------
-using ParamT = std::tuple<KernelSpec, MatCase>;
-
-class MatmulTest : public ::testing::TestWithParam<ParamT> {
-protected:
-  const KernelSpec &kernel() const { return std::get<0>(GetParam()); }
-  const MatCase &mcase() const { return std::get<1>(GetParam()); }
-};
-
-TEST_P(MatmulTest, Correctness) {
-  const auto &k = kernel();
-  const auto &c = mcase();
-  run_matrix_mul_and_check(c.M, c.N, c.K, k.func, k.atol);
+TEST_P(MatmulCudaTest, Correctness)
+{
+  const auto &[impl, matrix_case] = GetParam();
+  run_matrix_mul_and_check(impl, matrix_case);
 }
 
-// Name generator to make gtest output/filters friendly
-static std::string PrettyNameGen(const testing::TestParamInfo<ParamT> &info) {
-  const auto &k = std::get<0>(info.param);
-  const auto &c = std::get<1>(info.param);
+std::string pretty_name(const testing::TestParamInfo<Param> &info)
+{
+  const auto &[impl, matrix_case] = info.param;
   std::ostringstream oss;
-  oss << k.name << "__M" << c.M << "_N" << c.N << "_K" << c.K;
+  oss << impl.id << "__" << matrix_case.id << "__M" << matrix_case.m << "_N" << matrix_case.n
+      << "_K" << matrix_case.k;
   return oss.str();
 }
 
-INSTANTIATE_TEST_SUITE_P(KernelsAndSizes, MatmulTest,
-                         ::testing::Combine(::testing::ValuesIn(kKernels),
-                                            ::testing::ValuesIn(kCases)),
-                         PrettyNameGen);
+INSTANTIATE_TEST_SUITE_P(
+    ImplementationsAndCases,
+    MatmulCudaTest,
+    ::testing::Combine(::testing::ValuesIn(leetgpu::matrix_multiplication::kCudaImplementations),
+                       ::testing::ValuesIn(leetgpu::matrix_multiplication::kTestCases)),
+    pretty_name);
+
+} // namespace

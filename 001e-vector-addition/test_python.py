@@ -1,39 +1,41 @@
-import sys
+import os
 import pathlib
-import importlib
+import sys
+
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 torch = pytest.importorskip("torch", reason="PyTorch not installed")
-triton = pytest.importorskip("triton", reason="Triton not installed")
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA GPU not available"
-)
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA GPU not available")
 
-mod = importlib.import_module("src_python")
+IMPLS = [
+    ("pytorch", "src_python", "solve_pytorch"),
+    ("triton", "src_triton", "solve"),
+]
 
-IMPLS = ["pytorch", "triton"]
+if os.getenv("LEETGPU_TEST_TORCH_EXTENSION") == "1":
+    IMPLS.append(("torch_cuda_ext", "src_python", "solve_pytorch_cuda_vector_add"))
 
-@pytest.mark.parametrize("impl", IMPLS)
-@pytest.mark.parametrize("N", [1 << 16, 1 << 20])
-def test_vector_add_python(impl, N):
-    a = torch.randn(N, device="cuda", dtype=torch.float32)
-    b = torch.randn(N, device="cuda", dtype=torch.float32)
+
+@pytest.mark.parametrize("impl_name,module_name,func_name", IMPLS, ids=[impl[0] for impl in IMPLS])
+@pytest.mark.parametrize("n", [1, 3, 1 << 16, 1 << 20], ids=lambda n: f"N{n}")
+def test_vector_add_python(impl_name, module_name, func_name, n):
+    mod = pytest.importorskip(module_name, reason=f"{impl_name} dependencies not installed")
+    fn = getattr(mod, func_name, None)
+    if fn is None:
+        pytest.skip(f"{func_name} not found in {module_name}.py")
+
+    a = torch.randn(n, device="cuda", dtype=torch.float32)
+    b = torch.randn(n, device="cuda", dtype=torch.float32)
     c = torch.empty_like(a)
 
-    if impl == "pytorch":
-        fn = getattr(mod, "solve_pytorch", None)
-        if fn is None:
-            pytest.skip("solve_pytorch not found in src_python.py")
-        fn(a, b, c, N)
-    elif impl == "triton":
-        fn = getattr(mod, "solve_triton", None)
-        if fn is None:
-            pytest.skip("solve_triton not found in src_python.py")
-        fn(a, b, c, N)
-    else:
-        pytest.skip(f"unknown impl: {impl}")
+    try:
+        fn(a, b, c, n)
+    except Exception as exc:
+        if impl_name == "torch_cuda_ext":
+            pytest.skip(f"torch CUDA extension is unavailable: {exc}")
+        raise
 
     expect = a + b
     assert c.shape == expect.shape

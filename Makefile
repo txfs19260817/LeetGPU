@@ -1,23 +1,28 @@
 BUILD_DIR ?= build
+CMAKE_BUILD_TYPE ?= Debug
+CTEST_OUTPUT_ON_FAILURE ?= 1
 
-.PHONY: build test bench clean py-test py-clean py-sync
+.PHONY: all configure build build-release test bench clean py-sync py-test lint format
 
 all: build-release test bench
 
-build:
-	mkdir -p $(BUILD_DIR) && cd $(BUILD_DIR) && cmake -DNVBench_ENABLE_TESTING=OFF .. && make -j
+configure:
+	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
+
+build: configure
+	cmake --build $(BUILD_DIR) --parallel
 
 build-release:
-	mkdir -p $(BUILD_DIR) && cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Release -DNVBench_ENABLE_TESTING=OFF .. && make -j
+	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Release
+	cmake --build $(BUILD_DIR) --parallel
 
 test:
-	cd $(BUILD_DIR) && ctest --output-on-failure
+	ctest --test-dir $(BUILD_DIR) --output-on-failure
 
 bench:
-	cd $(BUILD_DIR) && for exe in $$(find . -maxdepth 1 -type f -executable -name "*_benchmark"); do \
-	    echo ">>> Running $$exe"; \
-	    $$exe; \
-	done
+	$(shell command -v python 2>/dev/null || command -v python3) -Bc "import pathlib, subprocess; \
+		[print('>>> Running', exe) or subprocess.check_call([str(exe)]) \
+		for exe in sorted(pathlib.Path('$(BUILD_DIR)').glob('*_benchmark')) if exe.is_file()]"
 
 clean:
 	$(shell command -v python 2>/dev/null || command -v python3) -Bc "import pathlib, shutil; \
@@ -31,3 +36,9 @@ py-sync:
 
 py-test:
 	uv run pytest -rs
+
+lint:
+	uv run ruff check .
+
+format:
+	uv run ruff format .

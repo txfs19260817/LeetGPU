@@ -4,6 +4,7 @@ out/
 *.o
 *.so
 *.a
+*.ncu-rep
 
 # Python cache
 __pycache__/
@@ -30,6 +31,8 @@ ENV/
 # Git
 .git/
 .gitignore
+.cache/
+.ruff_cache/
 
 # Documentation and notes
 *.md

@@ -1,65 +1,121 @@
 # LeetGPU
 
-A collection of exercises from [LeetGPU](https://leetgpu.com/) ([GitHub](https://github.com/AlphaGPU/leetgpu-challenges)), featuring implementations in CUDA, PyTorch, and Triton.
+CUDA, PyTorch, and Triton implementations for selected
+[LeetGPU](https://leetgpu.com/) exercises.
 
-## Prerequisites
+Each exercise directory owns its implementations and metadata:
 
-Tested on WSL2 Ubuntu 24.04.
+- `src_cuda.cu`: CUDA implementations.
+- `cuda_registry.cuh`: implementation names, test cases, benchmark axes.
+- `test_cuda.cu`: GoogleTest correctness tests.
+- `benchmark_cuda.cu`: NVBench benchmarks.
+- `src_python.py` / `src_triton.py`: Python framework implementations when available.
 
-### System Requirements
-- [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0&target_type=deb_local)
-- [CMake 4](https://cmake.org/download/)
-- Python 3.12+, GTest, NVBench
-- [uv](https://docs.astral.sh/uv/getting-started/)
+## Requirements
+
+- CUDA Toolkit 12.8+ or 13.x.
+- CMake 3.30+.
+- A C++17 host compiler supported by CUDA.
+- Python 3.12+ and [uv](https://docs.astral.sh/uv/getting-started/).
+
+This repo is tested on WSL2 Ubuntu 24.04 with a GeForce RTX 3070 Laptop GPU and
+CUDA 13.0.
+
+## Linux / WSL
 
 ```bash
-sudo apt-get install -y python3.12-dev libgtest-dev
 uv sync
+make build
+make test
+make py-test
 ```
 
-## Usages
-
-### Run CUDA Tests
+Release benchmarks:
 
 ```bash
-make build && make test
+make build-release
+make bench
 ```
 
-### Run CUDA Benchmarks
+Run a single benchmark implementation with NVBench axes:
 
 ```bash
-make build-release && make bench
+./build/001e_vector_addition_benchmark --axis "implementation=basic" --axis "N=1048576"
+./build/001m_reduction_benchmark --axis "implementation=cub" --axis "N=16777216"
+./build/002e_matrix_multiplication_benchmark --axis "implementation=smem_2d" --axis "case=square_512"
 ```
 
-### Run Python Tests
+CMake presets are also available:
 
 ```bash
-make py-sync && make py-test
+cmake --preset linux-debug
+cmake --build --preset linux-debug
+ctest --preset linux-debug
 ```
 
-### Clean
+## Windows Visual Studio
+
+Install CUDA Toolkit, Visual Studio 2022 with C++ build tools, CMake, and Python
+3.12. From a Developer PowerShell:
+
+```powershell
+cmake --preset windows-vs-debug
+cmake --build --preset windows-vs-debug
+ctest --preset windows-vs-debug
+```
+
+Open `build/windows-vs/LeetGPU.sln` to debug individual `*_test` or
+`*_benchmark` targets.
+
+## Python
 
 ```bash
-make clean
+uv sync
+uv run pytest -rs
+uv run ruff check .
 ```
 
-### NCU
+The default Python tests cover PyTorch and Triton. The PyTorch C++/CUDA extension
+path is optional because it invokes just-in-time compilation:
 
-1. Follow (the Windows section for WSL2) in [NVIDIA Developer Tools Solutions: Permission Issue with Performance Counters](https://developer.nvidia.com/nvidia-development-tools-solutions-err_nvgpuctrperm-permission-issue-performance-counters) to grant access to the GPU performance counters to all users.
-2. Restart WSL in powershell by running `wsl --shutdown`
-3. Run `ncu` (without sudo):
-  ```bash
-  ncu \
-    --set=full \ # Most comprehensive profiling
-    -f \ # Force overwrite output files if they already exist
-    --kernel-name-base demangled \ # Use human-readable kernel names in output
-    --kernel-name 'regex:vector_add' \ # Only profile kernels matching the regex pattern "vector_add"
-    -o vector_add \ # Output results to files with "vector_add" prefix (creates .ncu-rep files)
-    ./001_vector_addition_benchmark \ # The executable to profile. Here is a nvbench program. Flags for nvbench program can be found in https://github.com/NVIDIA/nvbench/blob/main/docs/cli_help.md
-    --profile \ # Run once only
-    --axis "N=67108864" # Run the benchmark with N=67108864
-  ```
+```bash
+LEETGPU_TEST_TORCH_EXTENSION=1 uv run pytest 001e-vector-addition -rs
+```
 
-This will generate `vector_add.ncu-rep` which can be opened in:
-- **Nsight Compute GUI** (Windows): For interactive analysis with charts and recommendations
-- **Command line**: `ncu -i vector_add.ncu-rep` for text-based analysis
+## Validation
+
+Last validated in WSL2 with CUDA 13.0:
+
+```bash
+make clean && make build
+ctest --test-dir build --output-on-failure
+make py-test
+uv run ruff check .
+uv run ruff format --check .
+```
+
+The CUDA suite currently discovers 136 tests across vector addition, reduction,
+and matrix multiplication.
+
+## Nsight Compute
+
+Generated `.ncu-rep` files are ignored by git. Example:
+
+```bash
+mkdir -p out/profiles
+ncu --set=full \
+  -f \
+  --kernel-name-base demangled \
+  --kernel-name 'regex:vector_add' \
+  -o out/profiles/vector_add \
+  ./build/001e_vector_addition_benchmark \
+  --profile \
+  --axis "implementation=basic" \
+  --axis "N=67108864"
+```
+
+Open the report in Nsight Compute GUI on Windows, or inspect it with:
+
+```bash
+ncu -i out/profiles/vector_add.ncu-rep
+```

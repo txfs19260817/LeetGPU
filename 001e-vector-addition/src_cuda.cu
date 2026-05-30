@@ -43,7 +43,7 @@ __global__ void vector_add_vectorized(const float *A, const float *B, float *C,
 __global__ void vector_add_vectorized2(const float *A, const float *B, float *C,
                                        int N) {
   int i = 4 * (blockDim.x * blockIdx.x + threadIdx.x);
-  if (i < N) {
+  if (i + 3 < N) {
     float4 a = reinterpret_cast<const float4 *>(&(A[i]))[0];
     float4 b = reinterpret_cast<const float4 *>(&(B[i]))[0];
     float4 c;
@@ -52,6 +52,10 @@ __global__ void vector_add_vectorized2(const float *A, const float *B, float *C,
     c.z = a.z + b.z;
     c.w = a.w + b.w;
     reinterpret_cast<float4 *>(&(C[i]))[0] = c;
+  } else {
+    for (int j = i; j < N; ++j) {
+      C[j] = A[j] + B[j];
+    }
   }
 }
 
