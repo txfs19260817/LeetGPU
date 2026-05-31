@@ -144,18 +144,18 @@ __global__ void matrix_multiplication_kernel_smem(const float *__restrict__ A, c
     }
 }
 
-// Shared Memory 1D Threading Matrix Multiplication
-// A[M×K] × B[K×N] = C[M×N]
+// Shared memory 1D-threading matrix multiplication.
+// A[M][K] * B[K][N] = C[M][N].
 // Uses 1D thread indexing for better global memory coalescing
 __global__ void matrix_multiplication_kernel_smem_1d(const float *__restrict__ A, const float *__restrict__ B,
                                                      float *__restrict__ C, int M, int N, int K)
 {
-    const uint cRow = blockIdx.y; // Block row index in output matrix C
-    const uint cCol = blockIdx.x; // Block column index in output matrix C
+    const unsigned int cRow = blockIdx.y; // Block row index in output matrix C
+    const unsigned int cCol = blockIdx.x; // Block column index in output matrix C
 
     // Convert 1D thread index to 2D tile coordinates
-    const uint threadCol = threadIdx.x % TILE_SIZE; // Column within tile [0, TILE_SIZE-1]
-    const uint threadRow = threadIdx.x / TILE_SIZE; // Row within tile [0, TILE_SIZE-1]
+    const unsigned int threadCol = threadIdx.x % TILE_SIZE; // Column within tile [0, TILE_SIZE-1]
+    const unsigned int threadRow = threadIdx.x / TILE_SIZE; // Row within tile [0, TILE_SIZE-1]
 
     __shared__ float As[TILE_SIZE * TILE_SIZE]; // Tile cache for A
     __shared__ float Bs[TILE_SIZE * TILE_SIZE]; // Tile cache for B
@@ -214,31 +214,26 @@ __global__ void matrix_multiplication_kernel_sliced_vec4(const float *__restrict
     const int ty = threadIdx.y;
     const int tx = threadIdx.x;
 
-    const int row = blockIdx.y * TILE_SIZE + ty; // 负责的 C 的行
-    const int col = blockIdx.x * TILE_SIZE + tx; // 负责的 C 的列
+    const int row = blockIdx.y * TILE_SIZE + ty;
+    const int col = blockIdx.x * TILE_SIZE + tx;
 
     float sum = 0.f;
 
-    // 能否做对齐良好的 float4 访问（行主序下需要 ld 是4的倍数）
-    const bool can_vec4_A = (K & 3) == 0; // A 的行跨度 K 是否是 4 的倍数
-    const bool can_vec4_B = (N & 3) == 0; // B 的行跨度 N 是否是 4 的倍数
+    // Row-major float4 access requires a leading dimension divisible by 4.
+    const bool can_vectorize_a = (K & 3) == 0;
+    const bool can_vectorize_b = (N & 3) == 0;
 
-    // 沿着"内积维 K"分块循环
+    // Tile along the inner K dimension.
     for (int t = 0; t < (K + TILE_SIZE - 1) / TILE_SIZE; ++t)
     {
-        // ---------------------
-        // gmem -> smem: A 的 tile
-        // 每4列为一组；仅 x%4==0 的线程做一次 float4
-        // 加载，其他线程不加载（但都会参与计算）
-        // ---------------------
-        const int a_col_base = t * TILE_SIZE + (tx & ~3); // 向下取整到4的倍数（组内起点）
+        // Global memory to shared memory: A tile.
+        // One thread in every four lanes performs a float4 load.
+        const int a_col_base = t * TILE_SIZE + (tx & ~3);
         if ((tx & 3) == 0)
         {
-            if (row < M && can_vec4_A && a_col_base + 3 < K)
+            if (row < M && can_vectorize_a && a_col_base + 3 < K)
             {
-                // 对齐良好，直接 vector load
-                const float4 v = *reinterpret_cast<const float4 *>(&A[row * K + a_col_base]); // K%4==0保证16B对齐
-                // smem 按标量写，避免 smem 对齐/向量写的额外注意事项
+                const float4 v = *reinterpret_cast<const float4 *>(&A[row * K + a_col_base]);
                 As[ty][tx + 0] = v.x;
                 As[ty][tx + 1] = v.y;
                 As[ty][tx + 2] = v.z;
@@ -246,7 +241,7 @@ __global__ void matrix_multiplication_kernel_sliced_vec4(const float *__restrict
             }
             else
             {
-// 尾块/不对齐：逐元素兜底
+// Scalar fallback for tail or unaligned cases.
 #pragma unroll
                 for (int u = 0; u < 4; ++u)
                 {
@@ -256,17 +251,15 @@ __global__ void matrix_multiplication_kernel_sliced_vec4(const float *__restrict
             }
         }
 
-        // ---------------------
-        // gmem -> smem: B 的 tile
-        // B 的"行"是内积维，按行连续；同样按4列打包 float4
-        // ---------------------
-        const int b_row = t * TILE_SIZE + ty;                      // B 的行（=内积维）
-        const int b_col_base = blockIdx.x * TILE_SIZE + (tx & ~3); // 列起点，4的倍数
+        // Global memory to shared memory: B tile.
+        // B rows are contiguous in row-major order, so load four columns at once.
+        const int b_row = t * TILE_SIZE + ty;
+        const int b_col_base = blockIdx.x * TILE_SIZE + (tx & ~3);
         if ((tx & 3) == 0)
         {
-            if (b_row < K && can_vec4_B && b_col_base + 3 < N)
+            if (b_row < K && can_vectorize_b && b_col_base + 3 < N)
             {
-                const float4 v = *reinterpret_cast<const float4 *>(&B[b_row * N + b_col_base]); // N%4==0保证16B对齐
+                const float4 v = *reinterpret_cast<const float4 *>(&B[b_row * N + b_col_base]);
                 Bs[ty][tx + 0] = v.x;
                 Bs[ty][tx + 1] = v.y;
                 Bs[ty][tx + 2] = v.z;
@@ -285,9 +278,7 @@ __global__ void matrix_multiplication_kernel_sliced_vec4(const float *__restrict
 
         __syncthreads();
 
-// ---------------------
-// 计算阶段：和原 sliced 完全一样
-// ---------------------
+// Compute this tile.
 #pragma unroll
         for (int i = 0; i < TILE_SIZE; ++i)
         {

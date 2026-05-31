@@ -67,6 +67,56 @@ ctest --preset windows-vs-debug
 Open `build/windows-vs/LeetGPU.sln` to debug individual `*_test` or
 `*_benchmark` targets.
 
+You can also open this repository directly from Visual Studio:
+
+1. Use `File -> Open -> Folder...` and select `D:\Projects\LeetGPU`.
+2. Select the `windows-vs-debug` CMake preset.
+3. Wait for CMake configure to finish.
+4. Open `View -> Other Windows -> CMake Targets View`.
+5. Right-click a target such as `002e_matrix_multiplication_test` and choose
+   `Debug`.
+
+Benchmark targets accept NVBench arguments in the Visual Studio project debug
+settings. Examples:
+
+```text
+--profile --axis implementation=basic --axis N=1048576
+--profile --axis implementation=cub --axis N=16777216
+--profile --axis implementation=smem_2d --axis case=square_512
+```
+
+Common Visual Studio issues:
+
+- If CUDA is not detected, confirm the Windows CUDA Toolkit is installed and
+  integrated with Visual Studio, then retry from a Developer PowerShell.
+- If the `windows-vs-debug` preset is missing, open the folder that contains
+  `CMakePresets.json`, not the `build/` directory.
+- If architecture detection fails, configure manually with an explicit value,
+  for example `-DCMAKE_CUDA_ARCHITECTURES=86` for an RTX 3070 or `90` for H100.
+- Triton is only a Linux dependency in this project. Windows Visual Studio is
+  intended for the C++/CUDA tests and benchmarks.
+- NVBench and GTest are fetched by CMake on first configure, so the first Visual
+  Studio configure can take a while and requires network access.
+- If CTest reports a target such as `002e_matrix_multiplication_test_NOT_BUILT`,
+  that test executable was not built or its GoogleTest discovery step did not
+  run. Build the target explicitly, then rerun CTest:
+
+  ```powershell
+  cmake --build --preset windows-vs-debug --target 002e_matrix_multiplication_test
+  ctest --preset windows-vs-debug
+  ```
+
+  If the explicit build fails, fix the first compile or link error in that build
+  output. If the explicit build succeeds but CTest still reports `NOT_BUILT`,
+  remove the stale Visual Studio build directory and configure again:
+
+  ```powershell
+  Remove-Item -Recurse -Force build\windows-vs
+  cmake --preset windows-vs-debug
+  cmake --build --preset windows-vs-debug
+  ctest --preset windows-vs-debug
+  ```
+
 ## Python
 
 ```bash
